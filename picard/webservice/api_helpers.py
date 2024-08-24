@@ -22,6 +22,7 @@
 
 
 import re
+from datetime import datetime
 from xml.sax.saxutils import quoteattr  # nosec: B404
 
 from PyQt6.QtCore import QUrl
@@ -163,7 +164,23 @@ class MBAPIHelper(APIHelper):
                 query = escape_lucene_query(kwargs['query']).strip().lower()
                 filters['dismax'] = 'true'
         else:
-            query = build_lucene_query(kwargs)
+            if 'meta_by_majority' in kwargs:
+                meta_by_majority = kwargs.pop('meta_by_majority')
+                query = kwargs
+                if 'CATALOGUENUMBER' in meta_by_majority:
+                    query['catno'] = meta_by_majority['CATALOGUENUMBER']
+                if 'DATE' in meta_by_majority:
+                    try:
+                        query['date'] = datetime.strptime(meta_by_majority['DATE'], '%b %d, %Y').strftime('%Y-%m-%d')
+                    except ValueError:
+                        query['date'] = datetime.strptime(meta_by_majority['DATE'], '%B %d, %Y').strftime('%Y-%m-%d')
+            else:
+                query = kwargs
+            if 'artist' in query:
+                query.pop('artist')
+            if 'catno' in query and 'release' in query:
+                query.pop('release')
+            query = build_lucene_query(query)
 
         if query:
             filters['query'] = query

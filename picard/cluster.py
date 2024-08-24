@@ -39,6 +39,8 @@ from collections import (
     Counter,
     defaultdict,
 )
+from datetime import datetime
+from math import ceil
 from operator import attrgetter
 import re
 
@@ -75,6 +77,7 @@ class FileList(QtCore.QObject, FileListItem):
         QtCore.QObject.__init__(self)
         FileListItem.__init__(self, files)
         self.metadata = Metadata()
+        self.meta_by_majority = Metadata()
         self.orig_metadata = Metadata()
         if self.files and self.can_show_coverart:
             for file in self.files:
@@ -96,13 +99,13 @@ class Cluster(FileList):
 
     # Weights for different elements when comparing a cluster to a release
     comparison_weights = {
-        'album': 17,
+        'album': 7,
         'albumartist': 6,
         'totalalbumtracks': 5,
         'releasetype': 10,
         'releasecountry': 2,
         'format': 2,
-        'date': 4,
+        'date': 10,
     }
 
     def __init__(self, name, artist="", special=False, related_album=None, hide_if_empty=False):
@@ -178,8 +181,30 @@ class Cluster(FileList):
 
     def update(self, signal=True):
         self.metadata['~totalalbumtracks'] = self.metadata['totaltracks'] = len(self.files)
+        self.get_metadata_by_majority()
         if signal and self.item:
             self.item.update()
+
+    def get_metadata_by_majority(self):
+        self.meta_by_majority.clear()
+        temp = defaultdict(lambda: defaultdict(int))
+        for file in self.files:
+            for key, value in file.metadata.items():
+                temp[key][value] += 1
+        threshold = int(ceil(len(self.files) / 2))
+        for key, inner_dict in temp.items():
+            for value, count in inner_dict.items():
+                if count < threshold:
+                    continue
+                self.meta_by_majority[key] = value
+                break
+        if 'CATALOGUENUMBER' in self.meta_by_majority:
+            self.metadata['catno'] = self.meta_by_majority['CATALOGUENUMBER']
+        if 'DATE' in self.meta_by_majority:
+            try:
+                self.metadata['date'] = datetime.strptime(self.meta_by_majority['DATE'], '%b %d, %Y').strftime('%Y-%m-%d')
+            except ValueError:
+                self.metadata['date'] = datetime.strptime(self.meta_by_majority['DATE'], '%B %d, %Y').strftime('%Y-%m-%d')
 
     def get_num_files(self):
         return len(self.files)
@@ -286,6 +311,7 @@ class Cluster(FileList):
             artist=self.metadata['albumartist'],
             release=self.metadata['album'],
             tracks=str(len(self.files)),
+            meta_by_majority=self.meta_by_majority,
             limit=config.setting['query_limit'])
 
     def clear_lookup_task(self):
@@ -315,7 +341,12 @@ class Cluster(FileList):
             # Only used for grouping and to provide cluster title / artist - not added to file tags.
             album, artist = album_artist_from_path(file.filename, album, artist)
 
-            token = tokenize(album)
+            from pathlib import Path
+            filepath = Path(file.filename)
+            if re.match(r"Disc \d", filepath.parent.name):
+                filepath = filepath.parent
+            token = filepath.parent
+            # token = tokenize(album)
             if token:
                 cluster_list[token].add(album, artist or various_artists, file)
 

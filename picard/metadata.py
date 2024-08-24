@@ -162,10 +162,11 @@ class Metadata(MutableMapping):
         ('title', 22),
         ('artist', 6),
         ('album', 12),
-        ('tracknumber', 6),
+        ('tracknumber', 25),
         ('totaltracks', 5),
         ('discnumber', 5),
         ('totaldiscs', 4),
+        ('catalognumber', 100)
     ]
 
     __date_match_factors = {
@@ -217,7 +218,11 @@ class Metadata(MutableMapping):
         with self._lock.lock_for_read():
             if self.length and other.length and '~length' not in ignored:
                 score = self.length_score(self.length, other.length)
-                parts.append((score, 8))
+                parts.append((score, 80))
+
+            if 'CATALOGUENUMBER' in other:
+                if self['catalognumber'] == other['CATALOGUENUMBER']:
+                    parts.append((1, 100))
 
             for name, weight in self.__weights:
                 if name in ignored:
@@ -288,6 +293,17 @@ class Metadata(MutableMapping):
                     score = trackcount_score(a, b)
                     parts.append((score, weights['totalalbumtracks']))
                 except (ValueError, KeyError):
+                    pass
+
+            if 'catno' in self:
+                try:
+                    found = 0
+                    for _ in release['label-info']:
+                        if self['catno'] == _['catalog-number']:
+                            found += 1
+                            break
+                    parts.append((found, 75))
+                except (KeyError, IndexError):
                     pass
 
             # Date Logic
